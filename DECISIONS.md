@@ -29,3 +29,10 @@ In `discounts.ts`, the repeated holiday/long-rental assignment blocks were extra
 **Document the feature in a PRD before building.** For a feature that introduces new business rules (discount eligibility, conflict resolution, tie-breaking), writing a short PRD first with the PM agent would have produced a single company-level record of why each decision was made. Without it, the reasoning lives only in this file and in commit messages. A PRD would also have caught the ambiguity around whether a rental that starts or ends on a holiday qualifies before implementation, avoiding back-and-forth during code review.
 
 The min price is still controlled by a slider capped at $200, meaning users cannot express a minimum above that value (e.g. "show me only vehicles over $250/hr"). A natural follow-up would be to replace the min slider with a free-form number input mirroring the max price input, with symmetric validation ensuring min stays below max. This would also remove the hard-coded `min={10}` floor, which currently silently excludes any future vehicles priced below $10/hr.
+
+---
+
+# Bonus
+## Drop-off date UX
+
+The drop-off date calendar currently disables only past dates, allowing users to select a drop-off before their pick-up with no visible error — the app silently returns empty results, which looks like no vehicles are available rather than an invalid date range. The drop-off calendar should be correlated to the pick-up selection, disabling any date before the chosen pick-up date and ideally defaulting to the next available day, so the two fields guide the user toward a valid range rather than punishing them after the fact.
