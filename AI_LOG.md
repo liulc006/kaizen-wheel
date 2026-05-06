@@ -545,3 +545,37 @@
 
 ✻ Brewed for 4m 5s
 
+❯ in @DECISIONS.md write a 2-3 sentences about the root cause of the price filter and the implemented fix. Also additionally add 2-3 sentences
+  about finding the 'reset all' bug, and future improvement to this price filter bug by implementing a fix for the min price as done for the max
+  price.
+  ⎿  Read DECISIONS.md (1 lines)
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(type "C:\Users\Luca\Desktop\project\kaizen-take-home\DECISIONS.md")
+  ⎿  Error: Exit code 1
+     /usr/bin/bash: line 1: type: C:\Users\Luca\Desktop\project\kaizen-take-home\DECISIONS.md: not found
+
+  Read 1 file (ctrl+o to expand)
+
+● The file is empty. Writing the entries now.
+
+● Write(DECISIONS.md)
+  ⎿  Wrote 13 lines to DECISIONS.md
+      2 # Decisions
+      4 ## Price filter bug fix
+      5 The root cause was a sentinel-value design in `api.ts` where a slider value of exactly `100` was hard-coded to mean "no upper limit"
+         The fix replaces the upper slider thumb with a free-form number input whose empty state maps to `null`, which `api.ts` now treats as
+         "no upper limit" instead of relying on a magic number. This eliminates the sentinel entirely and allows users to enter any arbitrary
+      6  maximum (e.g. $125/hr) rather than being constrained to $10 increments ending at $100.
+      8 ## Reset All bug
+      9 While fixing the price filter, the `disabled` guard on the "Reset all" button was found to check `form.getValues().make === undefined
+        tate. The fix replaces all `form.getValues()` calls in the guard with `form.watch()` subscriptions, making the disabled state reactiv
+        e, and corrects the make/classification checks to compare array lengths against the defaults from `filterOptions`.
+     … +13 lines (ctrl+o to expand)
+
+● DECISIONS.md now has three entries:
+  - Price filter bug fix — root cause (sentinel 100 = no limit, slider max also 100) and the fix (free-form null-based input)
+  - Reset All bug — the broken make === undefined check and the reactive form.watch() fix
+  - Future improvement — replacing the min price slider with a free-form input to match the max, and removing the implicit $10 floor
+
