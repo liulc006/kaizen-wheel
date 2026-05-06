@@ -1,5 +1,6 @@
 import { formatCents } from "@/lib/formatters";
 import { Vehicle } from "@/server/data";
+import { QuoteResult } from "@/server/api";
 import { useBase64Image } from "@/util/useBase64Image";
 import Link from "next/link";
 import { Button } from "@/components/shared/ui/button";
@@ -9,10 +10,12 @@ export function VehicleListItem({
   vehicle,
   startDateTime,
   endDateTime,
+  quote,
 }: {
   vehicle: Vehicle;
   startDateTime: Date;
   endDateTime: Date;
+  quote: QuoteResult;
 }) {
   const bookNowParams = new URLSearchParams({
     id: vehicle.id,
@@ -54,10 +57,25 @@ export function VehicleListItem({
         </dl>
       </div>
       <div className="md:ml-auto text-center md:text-right flex flex-col justify-center mt-4 md:mt-0">
+        {quote.discountType === "LONG_RENTAL" && (
+          <p className="text-sm line-through text-gray-400">
+            {formatCents(quote.originalHourlyRateCents)}/hr
+          </p>
+        )}
         <p className="text-xl font-bold">
-          {formatCents(vehicle.hourly_rate_cents)}
+          {formatCents(quote.effectiveHourlyRateCents)}
           <span className="text-sm text-gray-700 font-normal ml-0.5">/hr</span>
         </p>
+        {quote.discountType === "LONG_RENTAL" && (
+          <span className="inline-block mt-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+            −$10/hr long-rental discount
+          </span>
+        )}
+        {quote.discountType === "HOLIDAY" && (
+          <span className="inline-block mt-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+            17% holiday discount on total
+          </span>
+        )}
         <Button asChild className="mt-2 w-full sm:w-auto">
           <Link href={`/review?${bookNowParams.toString()}`}>
             Book now

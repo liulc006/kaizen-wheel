@@ -5,6 +5,16 @@ import {
   getVehicleById,
   getVehicles,
 } from "./data_helpers";
+import { computeDiscount } from "./discounts";
+import type { QuoteResult } from "./discounts";
+import type { Vehicle } from "./data";
+
+export type { DiscountType, QuoteResult } from "./discounts";
+
+export interface SearchVehiclesResult {
+  vehicles: Vehicle[];
+  quotesByVehicleId: Record<string, QuoteResult>;
+}
 
 const parseAndValidateTimeRange = (startTime: string, endTime: string) => {
   const start = DateTime.fromISO(startTime);
@@ -29,15 +39,7 @@ const calculateTotalPrice = (
   start: DateTime,
   end: DateTime,
   hourlyRateCents: number,
-) => {
-  const durationInHours = end.diff(start, "hours").hours || 0;
-
-  return {
-    totalPriceCents: hourlyRateCents * durationInHours,
-    hourlyRateCents,
-    durationInHours,
-  };
-};
+) => computeDiscount(start, end, hourlyRateCents);
 
 const validateReservationAndGetVehicle = (input: {
   vehicleId: string;
@@ -64,7 +66,7 @@ function searchVehicles(input: {
   makes: string[];
   priceMin: number;
   priceMax: number | null;
-}) {
+}): SearchVehiclesResult {
   const {
     startTime,
     endTime,
@@ -91,14 +93,15 @@ function searchVehicles(input: {
       priceMaxDollars: parsedPriceMax,
     });
 
-    return {
-      vehicles: availableVehicles,
-    };
+    const quotesByVehicleId: SearchVehiclesResult["quotesByVehicleId"] = {};
+    for (const vehicle of availableVehicles) {
+      quotesByVehicleId[vehicle.id] = computeDiscount(start, end, vehicle.hourly_rate_cents);
+    }
+
+    return { vehicles: availableVehicles, quotesByVehicleId };
   } catch (error) {
     console.error(error);
-    return {
-      vehicles: [],
-    }
+    return { vehicles: [], quotesByVehicleId: {} };
   }
 }
 

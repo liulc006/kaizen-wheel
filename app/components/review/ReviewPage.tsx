@@ -83,21 +83,48 @@ function Content() {
           <dl className="space-y-4">
             <div>
               <dt className="text-sm text-gray-600">Hourly Rate</dt>
-              <dd>
+              <dd className="flex items-baseline gap-2 flex-wrap">
+                {quote.discountType === "LONG_RENTAL" && (
+                  <span className="text-sm line-through text-gray-400">
+                    {formatCents(quote.originalHourlyRateCents)}/hr
+                  </span>
+                )}
                 <span className="text-lg">
-                  {formatCents(vehicle.hourly_rate_cents)}
+                  {formatCents(quote.effectiveHourlyRateCents)}
                 </span>
-                <span className="text-xs">/hr</span>
+                <span className="text-xs text-gray-700">/hr</span>
+                {quote.discountType === "LONG_RENTAL" && (
+                  <span className="text-xs font-semibold text-green-700">(−$10/hr)</span>
+                )}
               </dd>
             </div>
             <div>
               <dt className="text-sm text-gray-600">Duration</dt>
               <dd>{formattedDuration}</dd>
             </div>
+            {quote.discountType !== "NONE" && (
+              <div>
+                <dt className="text-sm text-gray-600">
+                  {quote.discountType === "HOLIDAY"
+                    ? "Holiday Discount (17% off)"
+                    : "Long-Rental Discount (−$10/hr)"}
+                </dt>
+                <dd className="text-green-700 font-medium">
+                  − {formatCents(quote.discountAmountCents)}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-sm text-gray-600">Total Cost</dt>
-              <dd className="text-2xl font-medium tracking-tight">
-                {formatCents(quote.totalPriceCents)}
+              <dd>
+                {quote.discountType !== "NONE" && (
+                  <span className="text-sm line-through text-gray-400 mr-2">
+                    {formatCents(quote.originalTotalPriceCents)}
+                  </span>
+                )}
+                <span className="text-2xl font-medium tracking-tight">
+                  {formatCents(quote.totalPriceCents)}
+                </span>
               </dd>
             </div>
           </dl>

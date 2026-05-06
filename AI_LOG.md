@@ -579,3 +579,543 @@
   - Reset All bug — the broken make === undefined check and the reactive form.watch() fix
   - Future improvement — replacing the min price slider with a free-form input to match the max, and removing the implicit $10 floor
 
+❯ update @CLAUDE.md to reflect the current price filter bug change
+  ⎿  Read CLAUDE.md (48 lines)
+
+  Read 1 file (ctrl+o to expand)
+
+● Two lines need updating: the AdditionalFilters description and the "Price filter behavior" section.
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      32
+      33  - `search/SearchPage.tsx` — top-level search UI; owns form state (`FormValues`) and passes it down
+      34  - `search/TimeRangeFilters.tsx` — date/time range pickers
+      35 -- `search/AdditionalFilters.tsx` — price slider (10–100 step 10), passengers, classification, make
+      35 +- `search/AdditionalFilters.tsx` — price min slider (10–200 step 10) + free-form max number input, passengers, classification, make
+      36  - `search/VehicleList.tsx` — calls `API.searchVehicles()` and renders results
+      37  - `search/VehicleListItem.tsx` — individual vehicle card with "Reserve" button
+      38  - `review/ReviewPage.tsx` — checkout page; reads vehicle ID + times from query params, calls `API.getQuote()`
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      44
+      45  ### Price filter behavior
+      46
+      47 -A slider value of `100` is treated as "no maximum" (converted to `Number.MAX_SAFE_INTEGER`) in `data_helpers.ts`.
+      47 +`FormValues.price` is a `[number, number | null]` tuple. The first element is the minimum (driven by a slider); the second is the m
+         +aximum, set via a free-form number input where an empty field stores `null`. In `api.ts`, `priceMax === null` is converted to `Numb
+         +er.MAX_SAFE_INTEGER` before being passed to `data_helpers.ts`, meaning null represents "no upper limit". If `priceMax` is set but l
+         +ess than `priceMin`, `VehicleList` skips the search and shows a prompt to adjust the range.
+
+● CLAUDE.md updated in two places:
+  - AdditionalFilters.tsx description now reflects the min slider (10–200 step 10) + free-form max input
+  - "Price filter behavior" section replaced with an accurate description of the [number, number | null] tuple, how null flows through to api.ts,
+  and the invalid-range guard in VehicleList
+
+❯ I would like to implement a new feature (have @"pm (agent)" design and plan this feature in a single prompt to implement)  that gives holiday
+  discount that satisfies these requirements:
+  A reservation that includes a holiday but does not start or end on that holiday
+  should receive a 17% discount off the total price.
+  A reservation for more than 3 days should receive a $10/hr discount on the
+  hourly rate.
+  These discounts cannot both apply at the same time. If they conflict, the
+  discount with the best price applies to the reservation.
+  Visitors should see the discount reflected during search and checkout,
+  including on the review page.
+  Fictional holidays to work with: Jan 21, Feb 12, Mar 04, May 02, Jun 16, Jul 26,
+  Aug 03, Sep 01, Nov 05, Dec 18.
+
+● Let me read the remaining files the pm agent will need before briefing it.
+
+  Read 2 files (ctrl+o to expand)
+
+● Now I have the full picture. Briefing the pm agent with complete implementation context.
+
+● pm(PRD + implementation plan for holiday discount feature)
+  ⎿  Done (9 tool uses · 22.2k tokens · 1m 56s)
+  (ctrl+o to expand)
+
+● Here's the complete PRD and implementation plan from the PM agent:
+
+  ---
+  PRD: Reservation Discounts — Holiday & Long-Rental
+
+  Discount Logic
+
+  Holiday discount (17% off total): Qualifies when at least one holiday falls strictly between the start and end dates (exclusive — start or end on
+  the holiday does not count). Multiple holidays still yield a single 17% discount.
+
+  Long-rental discount ($10/hr off rate): Qualifies when durationInHours > 72.
+
+  Conflict rule: Compute both discounted totals; apply the lower one. Ties go to the holiday discount.
+
+  Worked examples:
+  - 48hr trip spanning May 2 → Holiday: -17% off total. Long-rental doesn't qualify.
+  - 96hr trip with no holidays → Long-rental: -$10/hr. Holiday doesn't qualify.
+  - 120hr trip spanning May 2 → Both qualify; long-rental wins if it's cheaper.
+  - Trip starting on May 2 → Neither qualifies.
+
+  ---
+  Implementation Plan (5 files, ordered)
+
+  ┌──────┬───────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Step │                   File                    │                                          Change                                           │
+  ├──────┼───────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 1    │ app/server/discounts.ts (new)             │ HOLIDAYS constant + reservationSpansHoliday() + computeDiscount() pure functions          │
+  ├──────┼───────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 2    │ app/server/api.ts                         │ Add DiscountType, QuoteResult, SearchVehiclesResult types                                 │
+  ├──────┼───────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 3    │ app/server/api.ts                         │ Replace calculateTotalPrice to delegate to computeDiscount; getQuote return type becomes  │
+  │      │                                           │ QuoteResult                                                                               │
+  ├──────┼───────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 4    │ app/server/api.ts                         │ searchVehicles computes a quote per vehicle and returns { vehicles, quotesByVehicleId }   │
+  ├──────┼───────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 5    │ app/components/search/VehicleList.tsx     │ Destructure quotesByVehicleId; pass quote prop to each <VehicleListItem>                  │
+  ├──────┼───────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 6    │ app/components/search/VehicleListItem.tsx │ Add quote prop; show struck-through rate for LONG_RENTAL, badge for any discount          │
+  ├──────┼───────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 7    │ app/components/review/ReviewPage.tsx      │ Add Discount line item, update Hourly Rate and Total Cost to show discounted values +     │
+  │      │                                           │ struck-through originals                                                                  │
+  ├──────┼───────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 8    │ —                                         │ npm run ts to verify                                                                      │
+  └──────┴───────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Key design decisions:
+  - Discount logic is isolated in a new discounts.ts — pure and testable
+  - quote.totalPriceCents and quote.hourlyRateCents are kept as legacy aliases so existing ReviewPage reads don't immediately break
+  - VehicleList forwards quotes as props to avoid VehicleListItem making its own API calls
+  - HOLIDAY discount doesn't change the effective hourly rate (it's a total % off), so no struck-through rate is shown on search cards for that type
+   — only a badge
+
+  Ready to implement when you say go.
+
+❯ implement it
+
+● Starting with the server-side logic, then the UI. Let me re-read the current state of the files I'll be modifying.
+
+  Read 2 files (ctrl+o to expand)
+
+● Good, I have everything I need. Implementing all 5 file changes now — creating discounts.ts first since api.ts will import from it.
+
+● Write(app\server\discounts.ts)
+  ⎿  Wrote 100 lines to app\server\discounts.ts
+       1 import { DateTime } from "luxon";
+       2
+       3 export type DiscountType = "NONE" | "HOLIDAY" | "LONG_RENTAL";
+       4
+       5 export interface QuoteResult {
+       6   durationInHours: number;
+       7   originalHourlyRateCents: number;
+       8   effectiveHourlyRateCents: number;
+       9   originalTotalPriceCents: number;
+      10   discountedTotalPriceCents: number;
+     … +90 lines (ctrl+o to expand)
+
+● Now update api.ts to import from discounts.ts, replace calculateTotalPrice, and update searchVehicles:
+
+● Write(app\server\api.ts)
+  ⎿  Added 18 lines, removed 16 lines
+       5    getVehicleById,
+       6    getVehicles,
+       7  } from "./data_helpers";
+       8 +import { computeDiscount } from "./discounts";
+       9 +import type { Vehicle } from "./data";
+      10
+      11 +export type { DiscountType, QuoteResult } from "./discounts";
+      12 +
+      13 +export interface SearchVehiclesResult {
+      14 +  vehicles: Vehicle[];
+      15 +  quotesByVehicleId: Record<string, import("./discounts").QuoteResult>;
+      16 +}
+      17 +
+      18  const parseAndValidateTimeRange = (startTime: string, endTime: string) => {
+      19    const start = DateTime.fromISO(startTime);
+      20    const end = DateTime.fromISO(endTime);
+     ...
+      38    start: DateTime,
+      39    end: DateTime,
+      40    hourlyRateCents: number,
+      32 -) => {
+      33 -  const durationInHours = end.diff(start, "hours").hours || 0;
+      41 +) => computeDiscount(start, end, hourlyRateCents);
+      42
+      35 -  return {
+      36 -    totalPriceCents: hourlyRateCents * durationInHours,
+      37 -    hourlyRateCents,
+      38 -    durationInHours,
+      39 -  };
+      40 -};
+      41 -
+      43  const validateReservationAndGetVehicle = (input: {
+      44    vehicleId: string;
+      45    startTime: string;
+     ...
+      65    makes: string[];
+      66    priceMin: number;
+      67    priceMax: number | null;
+      67 -}) {
+      68 +}): SearchVehiclesResult {
+      69    const {
+      70      startTime,
+      71      endTime,
+     ...
+       92        priceMaxDollars: parsedPriceMax,
+       93      });
+       94
+       94 -    return {
+       95 -      vehicles: availableVehicles,
+       96 -    };
+       95 +    const quotesByVehicleId: SearchVehiclesResult["quotesByVehicleId"] = {};
+       96 +    for (const vehicle of availableVehicles) {
+       97 +      quotesByVehicleId[vehicle.id] = computeDiscount(start, end, vehicle.hourly_rate_cents);
+       98 +    }
+       99 +
+      100 +    return { vehicles: availableVehicles, quotesByVehicleId };
+      101    } catch (error) {
+      102      console.error(error);
+       99 -    return {
+      100 -      vehicles: [],
+      101 -    }
+      103 +    return { vehicles: [], quotesByVehicleId: {} };
+      104    }
+      105  }
+      106
+
+● Now update the three UI files in parallel:
+
+● Update(app\components\search\VehicleList.tsx)
+  ⎿  Added 1 line
+      63              vehicle={vehicle}
+      64              startDateTime={startDateTime}
+      65              endDateTime={endDateTime}
+      66 +            quote={searchResponse.quotesByVehicleId[vehicle.id]}
+      67            />
+      68          ))}
+      69        </ul>
+
+● Write(app\components\search\VehicleListItem.tsx)
+  ⎿  Added 14 lines, removed 1 line
+      1  import { formatCents } from "@/lib/formatters";
+      2  import { Vehicle } from "@/server/data";
+      3 +import { QuoteResult } from "@/server/api";
+      4  import { useBase64Image } from "@/util/useBase64Image";
+      5  import Link from "next/link";
+      6  import { Button } from "@/components/shared/ui/button";
+     ...
+      10    vehicle,
+      11    startDateTime,
+      12    endDateTime,
+      13 +  quote,
+      14  }: {
+      15    vehicle: Vehicle;
+      16    startDateTime: Date;
+      17    endDateTime: Date;
+      18 +  quote: QuoteResult;
+      19  }) {
+      20    const bookNowParams = new URLSearchParams({
+      21      id: vehicle.id,
+     ...
+      57          </dl>
+      58        </div>
+      59        <div className="md:ml-auto text-center md:text-right flex flex-col justify-center mt-4 md:mt-0">
+      60 +        {quote.discountType === "LONG_RENTAL" && (
+      61 +          <p className="text-sm line-through text-gray-400">
+      62 +            {formatCents(quote.originalHourlyRateCents)}/hr
+      63 +          </p>
+      64 +        )}
+      65          <p className="text-xl font-bold">
+      58 -          {formatCents(vehicle.hourly_rate_cents)}
+      66 +          {formatCents(quote.effectiveHourlyRateCents)}
+      67            <span className="text-sm text-gray-700 font-normal ml-0.5">/hr</span>
+      68          </p>
+      69 +        {quote.discountType !== "NONE" && (
+      70 +          <span className="inline-block mt-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+      71 +            {quote.discountType === "HOLIDAY" ? "Holiday Deal" : "Long-Rental Deal"}
+      72 +          </span>
+      73 +        )}
+      74          <Button asChild className="mt-2 w-full sm:w-auto">
+      75            <Link href={`/review?${bookNowParams.toString()}`}>
+      76              Book now
+
+● Update(app\components\review\ReviewPage.tsx)
+  ⎿  Added 25 lines, removed 3 lines
+      84              <div>
+      85                <dt className="text-sm text-gray-600">Hourly Rate</dt>
+      86                <dd>
+      87 +                {quote.discountType === "LONG_RENTAL" && (
+      88 +                  <span className="text-sm line-through text-gray-400 mr-1">
+      89 +                    {formatCents(quote.originalHourlyRateCents)}/hr
+      90 +                  </span>
+      91 +                )}
+      92                  <span className="text-lg">
+      88 -                  {formatCents(vehicle.hourly_rate_cents)}
+      93 +                  {formatCents(quote.effectiveHourlyRateCents)}
+      94                  </span>
+      95                  <span className="text-xs">/hr</span>
+      96                </dd>
+     ...
+       99                <dt className="text-sm text-gray-600">Duration</dt>
+      100                <dd>{formattedDuration}</dd>
+      101              </div>
+      102 +            {quote.discountType !== "NONE" && (
+      103 +              <div>
+      104 +                <dt className="text-sm text-gray-600">
+      105 +                  Discount ({quote.discountType === "HOLIDAY" ? "Holiday Deal" : "Long-Rental Deal"})
+      106 +                </dt>
+      107 +                <dd className="text-green-700 font-medium">
+      108 +                  − {formatCents(quote.discountAmountCents)}
+      109 +                </dd>
+      110 +              </div>
+      111 +            )}
+      112              <div>
+      113                <dt className="text-sm text-gray-600">Total Cost</dt>
+       99 -              <dd className="text-2xl font-medium tracking-tight">
+      100 -                {formatCents(quote.totalPriceCents)}
+      114 +              <dd>
+      115 +                {quote.discountType !== "NONE" && (
+      116 +                  <span className="text-sm line-through text-gray-400 mr-2">
+      117 +                    {formatCents(quote.originalTotalPriceCents)}
+      118 +                  </span>
+      119 +                )}
+      120 +                <span className="text-2xl font-medium tracking-tight">
+      121 +                  {formatCents(quote.totalPriceCents)}
+      122 +                </span>
+      123                </dd>
+      124              </div>
+      125            </dl>
+
+● Bash(cd "C:\Users\Luca\Desktop\project\kaizen-take-home" && npm run ts 2>&1)
+  ⎿  > tps-kaizenwheels@0.0.1 ts
+     > tsc --noEmit
+
+● All clean. Let me do a quick sanity check on the api.ts to make sure the inline import type is tidy:
+
+  Read 1 file (ctrl+o to expand)
+
+● The inline import("./discounts").QuoteResult on line 15 is redundant since QuoteResult is already re-exported on line 11. Clean it up:
+
+● Update(app\server\api.ts)
+  ⎿  Added 1 line, removed 1 line
+      12
+      13  export interface SearchVehiclesResult {
+      14    vehicles: Vehicle[];
+      15 -  quotesByVehicleId: Record<string, import("./discounts").QuoteResult>;
+      15 +  quotesByVehicleId: Record<string, QuoteResult>;
+      16  }
+      17
+      18  const parseAndValidateTimeRange = (startTime: string, endTime: string) => {
+
+● Bash(cd "C:\Users\Luca\Desktop\project\kaizen-take-home" && npm run ts 2>&1)
+  ⎿  Error: Exit code 2
+
+     > tps-kaizenwheels@0.0.1 ts
+     > tsc --noEmit
+
+     app/server/api.ts(15,37): error TS2304: Cannot find name 'QuoteResult'.
+
+● export type { ... } from re-exports to consumers but doesn't introduce the name in the local scope. Fix by also importing it:
+
+● Update(app\server\api.ts)
+  ⎿  Added 1 line
+       6    getVehicles,
+       7  } from "./data_helpers";
+       8  import { computeDiscount } from "./discounts";
+       9 +import type { QuoteResult } from "./discounts";
+      10  import type { Vehicle } from "./data";
+      11
+      12  export type { DiscountType, QuoteResult } from "./discounts";
+
+● Bash(cd "C:\Users\Luca\Desktop\project\kaizen-take-home" && npm run ts 2>&1)
+  ⎿  > tps-kaizenwheels@0.0.1 ts
+     > tsc --noEmit
+
+● Clean. Here's a summary of everything implemented:
+
+  ---
+  New file: app/server/discounts.ts
+  - HOLIDAYS — the 10 fictional holidays as { month, day } pairs
+  - reservationSpansHoliday() — iterates calendar days strictly between start and end, returns true if any match a holiday
+  - computeDiscount() — computes both candidate discounts, applies conflict resolution (lower total wins; ties go to holiday), returns a full
+  QuoteResult
+
+  Updated: app/server/api.ts
+  - Exports DiscountType and QuoteResult types (sourced from discounts.ts)
+  - calculateTotalPrice now delegates to computeDiscount
+  - searchVehicles computes a QuoteResult per vehicle and returns { vehicles, quotesByVehicleId }
+  - Legacy aliases (totalPriceCents, hourlyRateCents) preserved so old callers compiled without changes
+
+  Updated: app/components/search/VehicleList.tsx
+  - Passes quote={searchResponse.quotesByVehicleId[vehicle.id]} to each <VehicleListItem>
+
+  Updated: app/components/search/VehicleListItem.tsx
+  - Struck-through original rate shown for LONG_RENTAL (rate changes)
+  - Green badge shown for any non-NONE discount ("Holiday Deal" / "Long-Rental Deal")
+
+  Updated: app/components/review/ReviewPage.tsx
+  - Hourly Rate row shows struck-through original + effective rate for LONG_RENTAL
+  - New Discount line item (label + green savings amount) for any non-NONE discount
+  - Total Cost row shows struck-through original total + discounted total
+
+❯ fix the UI for the discount prices and show the amount of discount that a customer is getting (17% and the $10/hr)
+
+● Let me read the current UI files to see exactly what's there.
+
+  Read 2 files (ctrl+o to expand)
+
+● I can see the issues:
+  - The badge just says "Holiday Deal" / "Long-Rental Deal" — no discount amount
+  - For HOLIDAY on the card there's no visual hint that the rate is cheaper
+  - The review page discount label doesn't show the percentage or dollar amount
+
+  Fixing both files:
+
+● Update(app\components\search\VehicleListItem.tsx)
+  ⎿  Added 7 lines, removed 2 lines
+      66            {formatCents(quote.effectiveHourlyRateCents)}
+      67            <span className="text-sm text-gray-700 font-normal ml-0.5">/hr</span>
+      68          </p>
+      69 -        {quote.discountType !== "NONE" && (
+      69 +        {quote.discountType === "LONG_RENTAL" && (
+      70            <span className="inline-block mt-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+      71 -            {quote.discountType === "HOLIDAY" ? "Holiday Deal" : "Long-Rental Deal"}
+      71 +            −$10/hr long-rental discount
+      72            </span>
+      73          )}
+      74 +        {quote.discountType === "HOLIDAY" && (
+      75 +          <span className="inline-block mt-1 px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+      76 +            17% holiday discount on total
+      77 +          </span>
+      78 +        )}
+      79          <Button asChild className="mt-2 w-full sm:w-auto">
+      80            <Link href={`/review?${bookNowParams.toString()}`}>
+      81              Book now
+
+● Update(app\components\review\ReviewPage.tsx)
+  ⎿  Added 9 lines, removed 4 lines
+       83            <dl className="space-y-4">
+       84              <div>
+       85                <dt className="text-sm text-gray-600">Hourly Rate</dt>
+       86 -              <dd>
+       86 +              <dd className="flex items-baseline gap-2 flex-wrap">
+       87                  {quote.discountType === "LONG_RENTAL" && (
+       88 -                  <span className="text-sm line-through text-gray-400 mr-1">
+       88 +                  <span className="text-sm line-through text-gray-400">
+       89                      {formatCents(quote.originalHourlyRateCents)}/hr
+       90                    </span>
+       91                  )}
+       92                  <span className="text-lg">
+       93                    {formatCents(quote.effectiveHourlyRateCents)}
+       94                  </span>
+       95 -                <span className="text-xs">/hr</span>
+       95 +                <span className="text-xs text-gray-700">/hr</span>
+       96 +                {quote.discountType === "LONG_RENTAL" && (
+       97 +                  <span className="text-xs font-semibold text-green-700">(−$10/hr)</span>
+       98 +                )}
+       99                </dd>
+      100              </div>
+      101              <div>
+     ...
+      105              {quote.discountType !== "NONE" && (
+      106                <div>
+      107                  <dt className="text-sm text-gray-600">
+      105 -                  Discount ({quote.discountType === "HOLIDAY" ? "Holiday Deal" : "Long-Rental Deal"})
+      108 +                  {quote.discountType === "HOLIDAY"
+      109 +                    ? "Holiday Discount (17% off)"
+      110 +                    : "Long-Rental Discount (−$10/hr)"}
+      111                  </dt>
+      112                  <dd className="text-green-700 font-medium">
+      113                    − {formatCents(quote.discountAmountCents)}
+
+● Bash(cd "C:\Users\Luca\Desktop\project\kaizen-take-home" && npm run ts 2>&1)
+  ⎿  > tps-kaizenwheels@0.0.1 ts
+     > tsc --noEmit
+
+● Clean. Here's what changed:
+
+  Search card (VehicleListItem)
+  - LONG_RENTAL: struck-through original rate, discounted rate, green badge "−$10/hr long-rental discount"
+  - HOLIDAY: rate unchanged (discount is on total, not per-hour), green badge "17% holiday discount on total"
+
+  Review page (ReviewPage)
+  - Hourly Rate row for LONG_RENTAL: struck-through original + discounted rate + inline "(−$10/hr)" label
+  - Discount line label now reads "Holiday Discount (17% off)" or "Long-Rental Discount (−$10/hr)" instead of the generic deal name
+  - Savings amount in green still shows the exact dollar value saved
+
+❯ update CLAUDE.md with the new discount feature
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(CLAUDE.md)
+  ⎿  Added 2 lines, removed 1 line
+      26
+      27  - `data.ts` — static vehicle and reservation arrays with TypeScript types (`Vehicle`, `Reservation`)
+      28  - `data_helpers.ts` — pure filter logic: `getAvailableVehicles()` takes search criteria and returns matching vehicles by checking t
+          ime-overlap against existing reservations and applying price/passenger/class/make filters
+      29 -- `api.ts` — thin API surface (`searchVehicles`, `getQuote`) that delegates to `data_helpers` and computes pricing; `getQuote` calc
+         -ulates `durationInHours * hourlyRateCents`
+      29 +- `discounts.ts` — discount logic: `HOLIDAYS` constant (10 fictional month/day pairs), `computeDiscount()` returns a `QuoteResult`
+         +with original/effective rates, discount type, and savings amount
+      30 +- `api.ts` — thin API surface (`searchVehicles`, `getQuote`) that delegates to `data_helpers` and `discounts`; exports `QuoteResult
+         +`, `DiscountType`, and `SearchVehiclesResult` types
+      31
+      32  ### UI layer (`app/components/`)
+      33
+
+● Update(CLAUDE.md)
+  ⎿  Added 3 lines, removed 3 lines
+      34  - `search/SearchPage.tsx` — top-level search UI; owns form state (`FormValues`) and passes it down
+      35  - `search/TimeRangeFilters.tsx` — date/time range pickers
+      36  - `search/AdditionalFilters.tsx` — price min slider (10–200 step 10) + free-form max number input, passengers, classification, make
+      37 -- `search/VehicleList.tsx` — calls `API.searchVehicles()` and renders results
+      38 -- `search/VehicleListItem.tsx` — individual vehicle card with "Reserve" button
+      39 -- `review/ReviewPage.tsx` — checkout page; reads vehicle ID + times from query params, calls `API.getQuote()`
+      37 +- `search/VehicleList.tsx` — calls `API.searchVehicles()`, receives `quotesByVehicleId`, and passes each vehicle's `QuoteResult` to
+         + `VehicleListItem`
+      38 +- `search/VehicleListItem.tsx` — individual vehicle card; shows struck-through rate + discount badge when a discount applies
+      39 +- `review/ReviewPage.tsx` — checkout page; reads vehicle ID + times from query params, calls `API.getQuote()`; shows discount label
+         +, savings amount, and struck-through original total when a discount applies
+      40  - `shared/` — `ErrorFallback`, `MiniPageLayout`, and re-exported shadcn/ui primitives
+      41
+      42  ### Routing
+
+● Update(CLAUDE.md)
+  ⎿  Added 12 lines
+      43
+      44  Two routes: `/` (search, `app/page.tsx`) and `/review` (checkout, `app/review/page.tsx`). Navigation to review passes `vehicleId`,
+          `startTime`, and `endTime` as URL query params.
+      45
+      46 +### Discount behavior
+      47 +
+      48 +Two mutually exclusive discounts are computed by `computeDiscount()` in `discounts.ts` and surfaced through `getQuote` and `searchV
+         +ehicles`:
+      49 +
+      50 +- **Holiday discount (17% off total):** applies when the reservation spans at least one holiday strictly between the start and end
+         +dates (a reservation that starts or ends on a holiday does not qualify). Multiple holidays in range still yield a single 17% discou
+         +nt.
+      51 +- **Long-rental discount (−$10/hr):** applies when `durationInHours > 72`. The effective hourly rate is floored at 0.
+      52 +- **Conflict rule:** when both qualify, the discount producing the lower total wins; ties go to the holiday discount.
+      53 +
+      54 +`QuoteResult` carries `originalHourlyRateCents`, `effectiveHourlyRateCents`, `originalTotalPriceCents`, `discountedTotalPriceCents`
+         +, `discountAmountCents`, and `discountType` (`"NONE" | "HOLIDAY" | "LONG_RENTAL"`). The legacy fields `totalPriceCents` and `hourly
+         +RateCents` are aliases for the discounted values.
+      55 +
+      56 +The price filter in `getAvailableVehicles` compares against the **original** `hourly_rate_cents`, not the discounted rate.
+      57 +
+      58  ### Price filter behavior
+      59
+      60  `FormValues.price` is a `[number, number | null]` tuple. The first element is the minimum (driven by a slider); the second is the m
+          aximum, set via a free-form number input where an empty field stores `null`. In `api.ts`, `priceMax === null` is converted to `Numb
+          er.MAX_SAFE_INTEGER` before being passed to `data_helpers.ts`, meaning null represents "no upper limit". If `priceMax` is set but l
+          ess than `priceMin`, `VehicleList` skips the search and shows a prompt to adjust the range.
+
+● CLAUDE.md updated with three additions:
+
+  - discounts.ts entry in the data layer describing HOLIDAYS and computeDiscount()
+  - Updated api.ts description noting the exported discount types
+  - Updated VehicleList and VehicleListItem descriptions to mention the quote prop and discount badge
+  - Updated ReviewPage description to mention the discount breakdown UI
+  - New Discount behavior section covering both discount rules, conflict resolution, the QuoteResult shape, and the note that price filtering uses
+  the original rate
+
+

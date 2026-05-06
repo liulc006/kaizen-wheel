@@ -63,6 +63,7 @@ export function VehicleList() {
             vehicle={vehicle}
             startDateTime={startDateTime}
             endDateTime={endDateTime}
+            quote={searchResponse.quotesByVehicleId[vehicle.id]}
           />
         ))}
       </ul>
