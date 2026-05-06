@@ -7,7 +7,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/shared/ui/form";
-import { RangeSlider, Slider } from "@/components/shared/ui/slider";
+import { Input } from "@/components/shared/ui/input";
+import { Slider } from "@/components/shared/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/shared/ui/toggle-group";
 import { formatDollars } from "@/lib/formatters.tsx";
 import { FilterOptions } from "@/server/api";
@@ -17,6 +18,10 @@ export function AdditionalFilters({ filterOptions }: { filterOptions: FilterOpti
   const form = useFormContext<FormValues>();
 
   const price = form.watch("price");
+  const minPassengers = form.watch("minPassengers");
+  const make = form.watch("make");
+  const classification = form.watch("classification");
+
   const minPrice = price[0];
   const maxPrice = price[1];
 
@@ -31,19 +36,48 @@ export function AdditionalFilters({ filterOptions }: { filterOptions: FilterOpti
             <div className="flex w-full items-baseline justify-between mb-4">
               <FormLabel>Price</FormLabel>
               <div className="text-sm">
-                {formatDollars(minPrice)} to{" "}
-                {maxPrice === 100 ? "$100+" : formatDollars(maxPrice)}
+                {formatDollars(minPrice)} min —{" "}
+                {maxPrice === null ? "no limit" : `${formatDollars(maxPrice)} max`}
               </div>
             </div>
             <FormControl>
-              <RangeSlider
+              <Slider
                 min={10}
-                max={100}
+                max={maxPrice !== null ? Math.max(maxPrice, 10) : 200}
                 step={10}
-                value={field.value}
-                onValueChange={field.onChange}
+                value={[minPrice]}
+                onValueChange={(value) => field.onChange([value[0], maxPrice])}
               />
             </FormControl>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                Max $/hr
+              </span>
+              <Input
+                type="number"
+                min={1}
+                step={10}
+                placeholder="No limit"
+                value={maxPrice === null ? "" : maxPrice}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === "") {
+                    field.onChange([minPrice, null]);
+                    return;
+                  }
+                  const parsed = Number(raw);
+                  if (Number.isInteger(parsed) && parsed > 0) {
+                    field.onChange([minPrice, parsed]);
+                  }
+                }}
+                className="w-28"
+              />
+            </div>
+            {maxPrice !== null && maxPrice < minPrice && (
+              <p className="text-sm font-medium text-destructive">
+                Max must be greater than min
+              </p>
+            )}
             <FormMessage />
           </FormItem>
         )}
@@ -83,11 +117,11 @@ export function AdditionalFilters({ filterOptions }: { filterOptions: FilterOpti
                 value={field.value}
                 className="flex flex-wrap justify-start"
               >
-                {filterOptions.classifications.map((classification) => (
-                  <FormItem key={classification}>
+                {filterOptions.classifications.map((c) => (
+                  <FormItem key={c}>
                     <FormControl>
-                      <ToggleGroupItem variant="outline" value={classification}>
-                        {classification}
+                      <ToggleGroupItem variant="outline" value={c}>
+                        {c}
                       </ToggleGroupItem>
                     </FormControl>
                   </FormItem>
@@ -111,11 +145,11 @@ export function AdditionalFilters({ filterOptions }: { filterOptions: FilterOpti
                 value={field.value}
                 className="flex flex-wrap justify-start"
               >
-                { filterOptions.makes.map((make) => (
-                  <FormItem key={make}>
+                {filterOptions.makes.map((m) => (
+                  <FormItem key={m}>
                     <FormControl>
-                      <ToggleGroupItem variant="outline" value={make}>
-                        {make}
+                      <ToggleGroupItem variant="outline" value={m}>
+                        {m}
                       </ToggleGroupItem>
                     </FormControl>
                   </FormItem>
@@ -135,10 +169,11 @@ export function AdditionalFilters({ filterOptions }: { filterOptions: FilterOpti
         }}
         className="mt-4"
         disabled={
-          form.getValues().minPassengers === 1 &&
-          form.getValues().make === undefined &&
-          form.getValues().price[0] === 10 &&
-          form.getValues().price[1] === 100
+          minPassengers === 1 &&
+          make.length === filterOptions.makes.length &&
+          classification.length === filterOptions.classifications.length &&
+          price[0] === 10 &&
+          price[1] === null
         }
       >
         Reset all

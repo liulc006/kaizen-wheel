@@ -3,7 +3,7 @@ export interface FormValues {
   startTime: string;
   endDate: Date;
   endTime: string;
-  price: [number, number];
+  price: [number, number | null];
   minPassengers: number;
   make: string[];
   classification: string[];

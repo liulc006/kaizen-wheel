@@ -24,6 +24,16 @@ export function VehicleList() {
     [endDate, endTime],
   );
 
+  if (price[1] !== null && price[1] < price[0]) {
+    return (
+      <div className="flex justify-center items-center h-32">
+        <p className="text-muted-foreground">
+          Adjust the price range to see results.
+        </p>
+      </div>
+    );
+  }
+
   const searchResponse = API.searchVehicles({
     startTime: startDateTime.toISOString(),
     endTime: endDateTime.toISOString(),

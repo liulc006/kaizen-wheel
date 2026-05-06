@@ -63,7 +63,7 @@ function searchVehicles(input: {
   classifications: string[];
   makes: string[];
   priceMin: number;
-  priceMax: number;
+  priceMax: number | null;
 }) {
   const {
     startTime,
@@ -76,7 +76,7 @@ function searchVehicles(input: {
   } = input;
 
   const parsedPriceMin = priceMin;
-  const parsedPriceMax = priceMax === 100 ? Number.MAX_SAFE_INTEGER : priceMax;
+  const parsedPriceMax = priceMax === null ? Number.MAX_SAFE_INTEGER : priceMax;
 
   try {
     const { start, end } = parseAndValidateTimeRange(startTime, endTime);
