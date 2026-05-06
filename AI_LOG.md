@@ -1118,4 +1118,422 @@
   - New Discount behavior section covering both discount rules, conflict resolution, the QuoteResult shape, and the note that price filtering uses
   the original rate
 
+❯ Revisit the pricing/discount code you just shipped. refactor it. Clean it up using the help of @code-reviewer agent. Extract
+  what should be extracted. Name things well. Add tests if you didn't already.
+  In DECISIONS.md , add a short section explaining:
+  - What you changed and why
+  - What I would of done differently: implement the discount/holiday rate that would show the total price within the selected days to improve UX
+  experience. Also, I would document my changes in a PRD with the help of my PM agent to keep a company record of the tasks.
+
+● Let me read the current discount and API code before spinning up the reviewer.
+
+  Read 2 files (ctrl+o to expand)
+
+● Now I'll spawn the code-reviewer in parallel with reading package.json to understand the test setup.
+
+  Read 1 file (ctrl+o to expand)
+
+● code-reviewer(Code review of discounts.ts and api.ts for refactoring)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+
+● No test runner is configured. I'll install Vitest while the reviewer runs.
+
+● Bash(cd "C:\Users\Luca\Desktop\project\kaizen-take-home" && npm install --save-dev vitest 2>&1)
+  ⎿  added 40 packages, changed 3 packages, and audited 266 packages in 9s
+
+     57 packages are looking for funding
+     … +11 lines (ctrl+o to expand)
+
+● Now add the test script to package.json:
+
+● Update(package.json)
+  ⎿  Error editing file
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(package.json)
+  ⎿  Added 2 lines, removed 1 line
+       7      "dev": "next dev",
+       8      "build": "next build",
+       9      "start": "next start",
+      10 -    "ts": "tsc --noEmit"
+      10 +    "ts": "tsc --noEmit",
+      11 +    "test": "vitest run"
+      12    },
+      13    "dependencies": {
+      14      "@hookform/resolvers": "^3.9.0",
+
+● Let me check what still uses the legacy aliases before the reviewer finishes:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Good — ReviewPage.tsx:126 is the only external consumer of the totalPriceCents alias. I have everything I need to start the refactor. I'll
+  implement it now and fold in the reviewer's findings when they land.
+
+● Write(app\server\discounts.ts)
+  ⎿  Added 77 lines, removed 47 lines
+      10    discountedTotalPriceCents: number;
+      11    discountAmountCents: number;
+      12    discountType: DiscountType;
+      13 -  // Legacy aliases so existing callers don't need immediate updates
+      14 -  totalPriceCents: number;
+      15 -  hourlyRateCents: number;
+      13  }
+      14
+      18 -const HOLIDAYS: Array<{ month: number; day: number }> = [
+      15 +const HOLIDAY_DISCOUNT_RATE = 0.17;
+      16 +const LONG_RENTAL_HOURLY_DISCOUNT_CENTS = 1_000; // $10/hr in cents
+      17 +const LONG_RENTAL_THRESHOLD_HOURS = 72;          // > 3 days
+      18 +
+      19 +export const HOLIDAYS: ReadonlyArray<{ month: number; day: number }> = [
+      20    { month: 1,  day: 21 },
+      21    { month: 2,  day: 12 },
+      22    { month: 3,  day: 4  },
+     ...
+      29    { month: 12, day: 18 },
+      30  ];
+      31
+      31 -function reservationSpansHoliday(start: DateTime, end: DateTime): boolean {
+      32 +function isHoliday(date: DateTime): boolean {
+      33 +  return HOLIDAYS.some((h) => h.month === date.month && h.day === date.day);
+      34 +}
+      35 +
+      36 +// Returns true when at least one holiday falls strictly between start and end
+      37 +// (a reservation that starts or ends on a holiday does not qualify).
+      38 +export function reservationSpansHoliday(start: DateTime, end: DateTime): boolean {
+      39    const startDay = start.startOf("day");
+      40    const endDay = end.startOf("day");
+      41    let d = startDay.plus({ days: 1 });
+      42    while (d < endDay) {
+      36 -    if (HOLIDAYS.some((h) => h.month === d.month && h.day === d.day)) {
+      37 -      return true;
+      38 -    }
+      43 +    if (isHoliday(d)) return true;
+      44      d = d.plus({ days: 1 });
+      45    }
+      46    return false;
+      47  }
+      48
+      49 +type DiscountCandidate = {
+      50 +  discountType: Exclude<DiscountType, "NONE">;
+      51 +  effectiveHourlyRateCents: number;
+      52 +  discountedTotalPriceCents: number;
+      53 +  discountAmountCents: number;
+      54 +};
+      55 +
+      56 +function buildHolidayCandidate(
+      57 +  originalHourlyRateCents: number,
+      58 +  originalTotalPriceCents: number,
+      59 +): DiscountCandidate {
+      60 +  const discountAmountCents = Math.round(originalTotalPriceCents * HOLIDAY_DISCOUNT_RATE);
+      61 +  return {
+      62 +    discountType: "HOLIDAY",
+      63 +    effectiveHourlyRateCents: originalHourlyRateCents,
+      64 +    discountedTotalPriceCents: originalTotalPriceCents - discountAmountCents,
+      65 +    discountAmountCents,
+      66 +  };
+      67 +}
+      68 +
+      69 +function buildLongRentalCandidate(
+      70 +  originalHourlyRateCents: number,
+      71 +  durationInHours: number,
+      72 +  originalTotalPriceCents: number,
+      73 +): DiscountCandidate {
+      74 +  const effectiveHourlyRateCents = Math.max(
+      75 +    0,
+      76 +    originalHourlyRateCents - LONG_RENTAL_HOURLY_DISCOUNT_CENTS,
+      77 +  );
+      78 +  const discountedTotalPriceCents = effectiveHourlyRateCents * durationInHours;
+      79 +  return {
+      80 +    discountType: "LONG_RENTAL",
+      81 +    effectiveHourlyRateCents,
+      82 +    discountedTotalPriceCents,
+      83 +    discountAmountCents: originalTotalPriceCents - discountedTotalPriceCents,
+      84 +  };
+      85 +}
+      86 +
+      87  export function computeDiscount(
+      88    start: DateTime,
+      89    end: DateTime,
+     ...
+       92    const durationInHours = end.diff(start, "hours").hours || 0;
+       93    const originalTotalPriceCents = hourlyRateCents * durationInHours;
+       94
+       52 -  const holidayQualifies = reservationSpansHoliday(start, end);
+       53 -  const longRentalQualifies = durationInHours > 72;
+       95 +  const candidates: DiscountCandidate[] = [];
+       96
+       55 -  const holidayDiscountAmount = Math.round(originalTotalPriceCents * 0.17);
+       56 -  const holidayTotal = originalTotalPriceCents - holidayDiscountAmount;
+       97 +  if (reservationSpansHoliday(start, end)) {
+       98 +    candidates.push(buildHolidayCandidate(hourlyRateCents, originalTotalPriceCents));
+       99 +  }
+      100 +  if (durationInHours > LONG_RENTAL_THRESHOLD_HOURS) {
+      101 +    candidates.push(buildLongRentalCandidate(hourlyRateCents, durationInHours, originalTotalPriceCents));
+      102 +  }
+      103
+       58 -  const effectiveLongRentalRate = Math.max(0, hourlyRateCents - 1000);
+       59 -  const longRentalTotal = effectiveLongRentalRate * durationInHours;
+       60 -  const longRentalDiscountAmount = originalTotalPriceCents - longRentalTotal;
+      104 +  // Pick lowest total; ties go to holiday (it appears first in candidates).
+      105 +  const best = candidates.reduce<DiscountCandidate | null>(
+      106 +    (winner, c) =>
+      107 +      winner === null || c.discountedTotalPriceCents < winner.discountedTotalPriceCents
+      108 +        ? c
+      109 +        : winner,
+      110 +    null,
+      111 +  );
+      112
+       62 -  let discountType: DiscountType = "NONE";
+       63 -  let discountedTotalPriceCents = originalTotalPriceCents;
+       64 -  let discountAmountCents = 0;
+       65 -  let effectiveHourlyRateCents = hourlyRateCents;
+       66 -
+       67 -  if (holidayQualifies && longRentalQualifies) {
+       68 -    if (longRentalTotal < holidayTotal) {
+       69 -      discountType = "LONG_RENTAL";
+       70 -      discountedTotalPriceCents = longRentalTotal;
+       71 -      discountAmountCents = longRentalDiscountAmount;
+       72 -      effectiveHourlyRateCents = effectiveLongRentalRate;
+       73 -    } else {
+       74 -      discountType = "HOLIDAY";
+       75 -      discountedTotalPriceCents = holidayTotal;
+       76 -      discountAmountCents = holidayDiscountAmount;
+       77 -    }
+       78 -  } else if (holidayQualifies) {
+       79 -    discountType = "HOLIDAY";
+       80 -    discountedTotalPriceCents = holidayTotal;
+       81 -    discountAmountCents = holidayDiscountAmount;
+       82 -  } else if (longRentalQualifies) {
+       83 -    discountType = "LONG_RENTAL";
+       84 -    discountedTotalPriceCents = longRentalTotal;
+       85 -    discountAmountCents = longRentalDiscountAmount;
+       86 -    effectiveHourlyRateCents = effectiveLongRentalRate;
+      113 +  if (best === null) {
+      114 +    return {
+      115 +      durationInHours,
+      116 +      originalHourlyRateCents: hourlyRateCents,
+      117 +      effectiveHourlyRateCents: hourlyRateCents,
+      118 +      originalTotalPriceCents,
+      119 +      discountedTotalPriceCents: originalTotalPriceCents,
+      120 +      discountAmountCents: 0,
+      121 +      discountType: "NONE",
+      122 +    };
+      123    }
+      124
+      125    return {
+      126      durationInHours,
+      127      originalHourlyRateCents: hourlyRateCents,
+       92 -    effectiveHourlyRateCents,
+       93 -    originalTotalPriceCents,
+       94 -    discountedTotalPriceCents,
+       95 -    discountAmountCents,
+       96 -    discountType,
+       97 -    totalPriceCents: discountedTotalPriceCents,
+       98 -    hourlyRateCents: effectiveHourlyRateCents,
+      128 +    ...best,
+      129    };
+      130  }
+
+● Agent "Code review of discounts.ts and api.ts for refactoring" completed
+
+● The reviewer is back. Key findings I'm incorporating:
+  - 🟠 Remove dead calculateTotalPrice wrapper in api.ts, call computeDiscount directly
+  - 🟠 reservationSpansHoliday should be exported (already done in my rewrite)
+  - 🟡 Remove legacy aliases (done in my rewrite) — fix the one remaining consumer in ReviewPage.tsx
+  - 🟡 Remove no-op parsedPriceMin in api.ts
+  - 🟡 Use DateTime.isValid instead of the fragile .toString() === "Invalid Date" check
+
+  Note on the reviewer's 🔴 "holiday span bug": that finding contradicts the spec ("does not start or end on that holiday") — my implementation is
+  intentionally exclusive of start/end days and is correct.
+
+  Now updating api.ts, fixing ReviewPage, and writing tests:
+
+● Write(app\server\api.ts)
+  ⎿  Added 3 lines, removed 13 lines
+      20    const start = DateTime.fromISO(startTime);
+      21    const end = DateTime.fromISO(endTime);
+      22
+      23 -  if (
+      24 -    start.toString() === "Invalid Date" ||
+      25 -    end.toString() === "Invalid Date"
+      26 -  ) {
+      23 +  if (!start.isValid || !end.isValid) {
+      24      throw new Error(
+      25        "BAD REQUEST: Invalid date format. Please use ISO 8601 format.",
+      26      );
+     ...
+      32    return { start, end };
+      33  };
+      34
+      38 -const calculateTotalPrice = (
+      39 -  start: DateTime,
+      40 -  end: DateTime,
+      41 -  hourlyRateCents: number,
+      42 -) => computeDiscount(start, end, hourlyRateCents);
+      43 -
+      35  const validateReservationAndGetVehicle = (input: {
+      36    vehicleId: string;
+      37    startTime: string;
+     ...
+      68      priceMax,
+      69    } = input;
+      70
+      80 -  const parsedPriceMin = priceMin;
+      71    const parsedPriceMax = priceMax === null ? Number.MAX_SAFE_INTEGER : priceMax;
+      72
+      73    try {
+     ...
+      79        passengerCount,
+      80        classifications,
+      81        makes,
+      92 -      priceMinDollars: parsedPriceMin,
+      82 +      priceMinDollars: priceMin,
+      83        priceMaxDollars: parsedPriceMax,
+      84      });
+      85
+     ...
+      143    endTime: string;
+      144  }) {
+      145    const { vehicle, start, end } = validateReservationAndGetVehicle(input);
+      156 -  return calculateTotalPrice(start, end, vehicle.hourly_rate_cents);
+      146 +  return computeDiscount(start, end, vehicle.hourly_rate_cents);
+      147  }
+      148
+      149  export const API = {
+
+● Update(app\components\review\ReviewPage.tsx)
+  ⎿  Added 1 line, removed 1 line
+      123                    </span>
+      124                  )}
+      125                  <span className="text-2xl font-medium tracking-tight">
+      126 -                  {formatCents(quote.totalPriceCents)}
+      126 +                  {formatCents(quote.discountedTotalPriceCents)}
+      127                  </span>
+      128                </dd>
+      129              </div>
+
+● Now write the test file:
+
+● Write(app\server\discounts.test.ts)
+  ⎿  Wrote 220 lines to app\server\discounts.test.ts
+       1 import { DateTime } from "luxon";
+       2 import { describe, expect, it } from "vitest";
+       3 import { computeDiscount, reservationSpansHoliday } from "./discounts";
+       4
+       5 // Fixed rate used across most tests for easy mental arithmetic: $60/hr = 6000 cents
+       6 const RATE = 6_000;
+       7
+       8 function dt(iso: string): DateTime {
+       9   return DateTime.fromISO(iso);
+      10 }
+     … +210 lines (ctrl+o to expand)
+
+● Bash(cd "C:\Users\Luca\Desktop\project\kaizen-take-home" && npm run ts 2>&1 && npm test 2>&1)
+  ⎿  Error: Exit code 2
+
+     > tps-kaizenwheels@0.0.1 ts
+     > tsc --noEmit
+
+     app/server/discounts.ts(125,3): error TS2741: Property 'originalTotalPriceCents' is missing in type '{ discountType: Exclude<DiscountType,
+     "NONE">; effectiveHourlyRateCents: number; discountedTotalPriceCents: number; discountAmountCents: number; durationInHours: number;
+     originalHourlyRateCents: number; }' but required in type 'QuoteResult'.
+
+● The ...best spread is missing originalTotalPriceCents since it's not on DiscountCandidate. Fix it:
+
+● Update(app\server\discounts.ts)
+  ⎿  Added 1 line
+      125    return {
+      126      durationInHours,
+      127      originalHourlyRateCents: hourlyRateCents,
+      128 +    originalTotalPriceCents,
+      129      ...best,
+      130    };
+      131  }
+
+● Bash(cd "C:\Users\Luca\Desktop\project\kaizen-take-home" && npm run ts 2>&1 && npm test 2>&1)
+  ⎿  > tps-kaizenwheels@0.0.1 ts
+     > tsc --noEmit
+     … +12 lines (ctrl+o to expand)
+
+● 21 tests pass. Now update DECISIONS.md:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(DECISIONS.md)
+  ⎿  Added 17 lines
+      11
+      12  ## Future improvement: free-form min price input
+      13
+      14 +---
+      15 +
+      16 +# Part 2
+      17 +## Discount feature refactor
+      18 +
+      19 +After the initial implementation, a code-review pass identified several issues worth cleaning up before the feature could be consid
+         +ered production-ready.
+      20 +
+      21 +The `calculateTotalPrice` wrapper in `api.ts` was a dead one-liner that simply re-called `computeDiscount` under a misleading name
+         +— it was removed and `getQuote` now calls `computeDiscount` directly. The `const parsedPriceMin = priceMin` no-op assignment was al
+         +so removed. The Luxon `DateTime` validity check was changed from a brittle string comparison (`toString() === "Invalid Date"`) to t
+         +he documented `.isValid` property. The legacy aliases `totalPriceCents` and `hourlyRateCents` on `QuoteResult` — originally added a
+         +s a migration shim — were removed once the one remaining consumer (`ReviewPage.tsx`) was updated to use `discountedTotalPriceCents`
+         +.
+      22 +
+      23 +In `discounts.ts`, the repeated holiday/long-rental assignment blocks were extracted into `buildHolidayCandidate` and `buildLongRen
+         +talCandidate` helper functions, eliminating the duplicated mutation logic. Magic numbers were replaced with named constants (`HOLID
+         +AY_DISCOUNT_RATE`, `LONG_RENTAL_HOURLY_DISCOUNT_CENTS`, `LONG_RENTAL_THRESHOLD_HOURS`). The conflict-resolution if/else chain was r
+         +eplaced with a `candidates.reduce` that picks the lower total, making the tie-break rule (holiday wins on equal totals) explicit by
+         + insertion order rather than a hidden else. `reservationSpansHoliday` was exported so it could be tested in isolation. Vitest was a
+         +dded as the test runner (`npm test`) and 21 tests were written covering every branch: no discount, holiday-only, long-rental-only,
+         +both-qualify with each winner, tie-break, rate-floor edge cases, year-boundary spans, and the intentional exclusion of start/end da
+         +ys.
+      24 +
+      25 +## What I would have done differently
+      26 +
+      27 +**Show total price on search cards.** The search results currently show a per-hour rate, which forces customers to do mental arithm
+         +etic to understand what they will actually pay for the dates they selected. Displaying the total cost for the chosen time window di
+         +rectly on each card — alongside the hourly rate — removes that friction and makes the discount savings immediately concrete (e.g. "
+         +was $1,440 → $1,195" rather than just a "17% off" badge). This matters especially for holiday and long-rental discounts where the s
+         +aving is only visible in the total, not the hourly rate.
+      28 +
+      29 +**Document the feature in a PRD before building.** For a feature that introduces new business rules (discount eligibility, conflict
+         + resolution, tie-breaking), writing a short PRD first with the PM agent would have produced a single company-level record of why ea
+         +ch decision was made. Without it, the reasoning lives only in this file and in commit messages. A PRD would also have caught the am
+         +biguity around whether a rental that starts or ends on a holiday qualifies before implementation, avoiding back-and-forth during co
+         +de review.
+      30 +
+      31  The min price is still controlled by a slider capped at $200, meaning users cannot express a minimum above that value (e.g. "show m
+          e only vehicles over $250/hr"). A natural follow-up would be to replace the min slider with a free-form number input mirroring the
+          max price input, with symmetric validation ensuring min stays below max. This would also remove the hard-coded `min={10}` floor, wh
+          ich currently silently excludes any future vehicles priced below $10/hr.
+
+● Everything done. Here's the full summary:
+
+  ---
+  Refactoring changes
+
+  discounts.ts
+  - Named constants replace magic numbers: HOLIDAY_DISCOUNT_RATE, LONG_RENTAL_HOURLY_DISCOUNT_CENTS, LONG_RENTAL_THRESHOLD_HOURS
+  - Extracted buildHolidayCandidate and buildLongRentalCandidate — no more duplicated mutation blocks in the if/else chain
+  - Extracted isHoliday() helper so reservationSpansHoliday reads as a loop over days, not an inline predicate
+  - Replaced the if/else conflict chain with a candidates.reduce — tie-break rule (holiday wins) is now explicit by insertion order
+  - reservationSpansHoliday exported for isolated testing
+  - Legacy aliases totalPriceCents / hourlyRateCents removed from QuoteResult
+
+  api.ts
+  - Dead calculateTotalPrice wrapper removed; getQuote calls computeDiscount directly
+  - No-op const parsedPriceMin = priceMin removed
+  - DateTime validity check updated from fragile string comparison to .isValid
+
+  ReviewPage.tsx
+  - Updated the one remaining alias consumer to quote.discountedTotalPriceCents
+
+  Tests — 21 passing (npm test)
+  - reservationSpansHoliday: no holiday, interior holiday, starts/ends on holiday (both false per spec), multiple holidays, year-boundary, same-day
+  - computeDiscount — NONE: no discount, zero duration
+  - computeDiscount — HOLIDAY: 17% applied, multiple holidays = single discount, start/end on holiday = no discount
+  - computeDiscount — LONG_RENTAL: >72h threshold, exactly 72h no discount, rate-floor at 0
+  - computeDiscount — conflict: long-rental wins, holiday wins, tie-break goes to holiday
+
 

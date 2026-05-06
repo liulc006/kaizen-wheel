@@ -123,7 +123,7 @@ function Content() {
                   </span>
                 )}
                 <span className="text-2xl font-medium tracking-tight">
-                  {formatCents(quote.totalPriceCents)}
+                  {formatCents(quote.discountedTotalPriceCents)}
                 </span>
               </dd>
             </div>

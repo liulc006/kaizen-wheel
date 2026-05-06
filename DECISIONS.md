@@ -11,4 +11,21 @@ While fixing the price filter, the `disabled` guard on the "Reset all" button wa
 
 ## Future improvement: free-form min price input
 
+---
+
+# Part 2 and 3
+## Discount feature refactor
+
+After the initial implementation, a code-review pass identified several issues worth cleaning up before the feature could be considered production-ready.
+
+The `calculateTotalPrice` wrapper in `api.ts` was a dead one-liner that simply re-called `computeDiscount` under a misleading name — it was removed and `getQuote` now calls `computeDiscount` directly. The `const parsedPriceMin = priceMin` no-op assignment was also removed. The Luxon `DateTime` validity check was changed from a brittle string comparison (`toString() === "Invalid Date"`) to the documented `.isValid` property. The legacy aliases `totalPriceCents` and `hourlyRateCents` on `QuoteResult` — originally added as a migration shim — were removed once the one remaining consumer (`ReviewPage.tsx`) was updated to use `discountedTotalPriceCents`.
+
+In `discounts.ts`, the repeated holiday/long-rental assignment blocks were extracted into `buildHolidayCandidate` and `buildLongRentalCandidate` helper functions, eliminating the duplicated mutation logic. Magic numbers were replaced with named constants (`HOLIDAY_DISCOUNT_RATE`, `LONG_RENTAL_HOURLY_DISCOUNT_CENTS`, `LONG_RENTAL_THRESHOLD_HOURS`). The conflict-resolution if/else chain was replaced with a `candidates.reduce` that picks the lower total, making the tie-break rule (holiday wins on equal totals) explicit by insertion order rather than a hidden else. `reservationSpansHoliday` was exported so it could be tested in isolation. Vitest was added as the test runner (`npm test`) and 21 tests were written covering every branch: no discount, holiday-only, long-rental-only, both-qualify with each winner, tie-break, rate-floor edge cases, year-boundary spans, and the intentional exclusion of start/end days.
+
+## What I would have done differently
+
+**Show total price on search cards.** The search results currently show a per-hour rate, which forces customers to do mental arithmetic to understand what they will actually pay for the dates they selected. Displaying the total cost for the chosen time window directly on each card — alongside the hourly rate — removes that friction and makes the discount savings immediately concrete (e.g. "was $1,440 → $1,195" rather than just a "17% off" badge). This matters especially for holiday and long-rental discounts where the saving is only visible in the total, not the hourly rate.
+
+**Document the feature in a PRD before building.** For a feature that introduces new business rules (discount eligibility, conflict resolution, tie-breaking), writing a short PRD first with the PM agent would have produced a single company-level record of why each decision was made. Without it, the reasoning lives only in this file and in commit messages. A PRD would also have caught the ambiguity around whether a rental that starts or ends on a holiday qualifies before implementation, avoiding back-and-forth during code review.
+
 The min price is still controlled by a slider capped at $200, meaning users cannot express a minimum above that value (e.g. "show me only vehicles over $250/hr"). A natural follow-up would be to replace the min slider with a free-form number input mirroring the max price input, with symmetric validation ensuring min stays below max. This would also remove the hard-coded `min={10}` floor, which currently silently excludes any future vehicles priced below $10/hr.
