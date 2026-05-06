@@ -1,3 +1,17 @@
+# Note
+
+AI Tool: Claude Code CLI - Sonnet 4.6
+
+Methods:
+- Since, I am working by myself, I used AI Tool to create a team a.k.a agents. I used agents to delegate planning, code implementation, design, audit, etc. with my review during each change.
+- each code change and planning gets reviewed by me before deployment or commit.
+
+Additional:
+- added self recording markdown file of my AI transcript interation in CLAUDE_CHAT_LOG.md using claude code hooks and bash scripts for reference.
+
+
+# AI TRANSCRIPT (PROMPTs AND RESPONSES)
+
 ❯ /init do not edit README.md
 
 ● I'll explore the codebase structure to create an accurate CLAUDE.md.
