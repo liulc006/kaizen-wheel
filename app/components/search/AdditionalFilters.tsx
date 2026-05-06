@@ -42,7 +42,7 @@ export function AdditionalFilters({ filterOptions }: { filterOptions: FilterOpti
             </div>
             <FormControl>
               <Slider
-                min={10}
+                min={0}
                 max={maxPrice !== null ? Math.max(maxPrice, 10) : 200}
                 step={10}
                 value={[minPrice]}
